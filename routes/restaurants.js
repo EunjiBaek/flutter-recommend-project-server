@@ -41,17 +41,35 @@ async function extractFoodKeyword(message) {
       {
         role: 'system',
         content: `
-너는 음식 추천 검색어 생성기야.
+너는 맛집 추천을 위한 사용자 의도 분석기야.
 
-사용자 문장에서 음식 검색 키워드를 3개만 추출해.
-반드시 공백으로 구분된 단어만 답해.
-문장, 설명, 따옴표는 쓰지 마.
+사용자의 문장에서 감정, 상황, 음식 키워드를 분석해.
+반드시 JSON만 반환해.
+
+형식:
+{
+  "mood": "사용자 감정",
+  "situation": "상황",
+  "keywords": ["검색키워드1", "검색키워드2", "검색키워드3"],
+  "recommendType": "추천 방향"
+}
 
 예시:
-"나 오늘 면 땡겨" → 라멘 국수 우동
-"고기 먹고 싶어" → 삼겹살 고깃집 소고기
-"해장하고 싶어" → 국밥 해장국 설렁탕
-"가볍게 먹고 싶어" → 샐러드 샌드위치 김밥
+"나 오늘 우울한데 먹을만한 음식 추천해줘"
+→ {
+  "mood": "우울함",
+  "situation": "기분 전환이 필요함",
+  "keywords": ["국밥", "라멘", "칼국수"],
+  "recommendType": "따뜻하고 든든한 음식"
+}
+
+"나 오늘 면 땡겨"
+→ {
+  "mood": "평범함",
+  "situation": "면 요리가 먹고 싶음",
+  "keywords": ["라멘", "국수", "우동"],
+  "recommendType": "면 요리"
+}
 `,
       },
       {
@@ -59,9 +77,57 @@ async function extractFoodKeyword(message) {
         content: message,
       },
     ],
+    response_format: { type: 'json_object' },
   });
 
-  return response.choices[0].message.content.trim();
+  return JSON.parse(response.choices[0].message.content);
+}
+
+async function generateRecommendationReasons({ userMessage, intent, restaurants }) {
+  const response = await openai.chat.completions.create({
+    model: 'gpt-4o-mini',
+    messages: [
+      {
+        role: 'system',
+        content: `
+너는 다정한 맛집 추천 도우미야.
+
+사용자의 감정과 상황을 고려해서 식당별 추천 이유를 자연스럽게 작성해.
+너무 과장하지 말고, 짧고 따뜻하게 말해.
+반드시 JSON 배열만 반환해.
+
+형식:
+[
+  {
+    "placeId": "식당 placeId",
+    "reason": "추천 이유"
+  }
+]
+`,
+      },
+      {
+        role: 'user',
+        content: JSON.stringify({
+          userMessage,
+          intent,
+          restaurants,
+        }),
+      },
+    ],
+    response_format: { type: 'json_object' },
+  });
+
+  const parsed = JSON.parse(response.choices[0].message.content);
+
+  if (Array.isArray(parsed)) {
+    return parsed;
+  }
+
+  if (Array.isArray(parsed.reasons)) {
+    return parsed.reasons;
+  }
+
+  return [];
 }
 
 function getDistanceMeter(lat1, lng1, lat2, lng2) {
@@ -78,6 +144,16 @@ function getDistanceMeter(lat1, lng1, lat2, lng2) {
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
+function getPlaceType(keyword) {
+  const dessertKeywords = ['디저트', '카페', '케이크', '빙수', '마카롱', '빵', '아이스크림'];
+
+  if (dessertKeywords.some((word) => keyword.includes(word))) {
+    return 'cafe';
+  }
+
+  return 'restaurant';
+}
+
 // 🔥 2. 맛집 추천 API
 router.post('/recommend', async (req, res) => {
   try {
@@ -89,16 +165,9 @@ router.post('/recommend', async (req, res) => {
       });
     }
 
-    // 1️⃣ OpenAI → 키워드 추출
-    const keywordText = await extractFoodKeyword(message);
-    // 예: "라멘 국수 우동"
+    const intent = await extractFoodKeyword(message);
 
-    const keywords = keywordText
-      .split(/\s+/)
-      .map((v) => v.trim())
-      .filter(Boolean);
-
-    // 2️⃣ Google Nearby Search 여러 번 실행
+    const keywords = intent.keywords ?? ['맛집'];
     const allResults = [];
 
     for (const keyword of keywords) {
@@ -109,7 +178,7 @@ router.post('/recommend', async (req, res) => {
             location: `${lat},${lng}`,
             radius: 1500,
             keyword: `${keyword} 맛집`,
-            type: 'restaurant',
+            type: getPlaceType(keyword),
             language: 'ko',
             key: process.env.GOOGLE_PLACES_API_KEY,
           },
@@ -127,7 +196,7 @@ router.post('/recommend', async (req, res) => {
     );
 
     // 4️⃣ 거리 계산 + 필터링 + 정렬
-    const restaurants = uniquePlaces
+    let restaurants = uniquePlaces
       .map((place) => {
         const distance = getDistanceMeter(
           Number(lat),
@@ -144,10 +213,10 @@ router.post('/recommend', async (req, res) => {
           distance: Math.round(distance),
           lat: place.geometry.location.lat,
           lng: place.geometry.location.lng,
-          reason: `${keywordText} 관련 근처 맛집으로 추천해요.`,
+          reason: ``,
         };
       })
-      .filter((place) => place.distance <= 1500) // 1.5km 제한
+      .filter((place) => place.distance <= 700) // 1.5km 제한
       .sort((a, b) => {
         // 평점 우선 → 거리
         const ratingDiff = b.rating - a.rating;
@@ -156,8 +225,25 @@ router.post('/recommend', async (req, res) => {
       })
       .slice(0, 5);
 
+    const reasons = await generateRecommendationReasons({
+      userMessage: message,
+      intent,
+      restaurants,
+    });
+
+    restaurants = restaurants.map((restaurant) => {
+      const matchedReason = Array.isArray(reasons)
+        ? reasons.find((item) => item.placeId === restaurant.placeId)
+        : null;
+
+      return {
+        ...restaurant,
+        reason: matchedReason?.reason ?? `${intent.recommendType}을 찾는 분께 추천해요.`,
+      };
+    });
+
     return res.json({
-      keyword: keywordText,
+      intent,
       restaurants,
     });
   } catch (error) {

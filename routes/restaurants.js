@@ -4,9 +4,17 @@ const OpenAI = require('openai');
 
 const router = express.Router();
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+// const openai = new OpenAI({
+//   apiKey: process.env.OPENAI_API_KEY,
+// });
+
+function getOpenAI() {
+  console.log('OPENAI EXISTS:', !!process.env.OPENAI_API_KEY);
+
+  return new OpenAI({
+    apiKey: process.env.OPENAI_API_KEY,
+  });
+}
 
 console.log('OPENAI KEY exists:', !!process.env.OPENAI_API_KEY);
 console.log('OPENAI KEY length:', process.env.OPENAI_API_KEY?.length);
@@ -39,6 +47,7 @@ async function searchNearbyRestaurants(keywords, lat, lng) {
 
 // 🔥 1. 질문 → 음식 키워드 추출
 async function extractFoodKeyword(message) {
+  const openai = getOpenAI();
   const response = await openai.chat.completions.create({
     model: 'gpt-4o-mini',
     messages: [
@@ -88,6 +97,7 @@ async function extractFoodKeyword(message) {
 }
 
 async function generateRecommendationReasons({ userMessage, intent, restaurants }) {
+  const openai = getOpenAI();
   const response = await openai.chat.completions.create({
     model: 'gpt-4o-mini',
     messages: [

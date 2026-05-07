@@ -1,10 +1,11 @@
-const express = require('express');
-const cors = require('cors');
 const dotenv = require('dotenv');
 
 const envFile = process.env.NODE_ENV === 'development' ? '.env.development' : '.env';
 
 dotenv.config({ path: envFile });
+
+const express = require('express');
+const cors = require('cors');
 
 console.log(process.env.NODE_ENV);
 

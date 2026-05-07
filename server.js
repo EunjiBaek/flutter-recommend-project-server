@@ -1,6 +1,12 @@
 const express = require('express');
 const cors = require('cors');
-require('dotenv').config();
+const dotenv = require('dotenv');
+
+const envFile = process.env.NODE_ENV === 'development' ? '.env.development' : '.env';
+
+dotenv.config({ path: envFile });
+
+console.log(process.env.NODE_ENV);
 
 const authRoutes = require('./routes/auth');
 const retaurantsRoutes = require('./routes/restaurants');
@@ -17,7 +23,7 @@ app.get('/', (req, res) => {
   res.send('Auth server running');
 });
 
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 8000;
 
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);

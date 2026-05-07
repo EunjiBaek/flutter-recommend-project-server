@@ -26,6 +26,11 @@ app.get('/', (req, res) => {
   res.send('Auth server running');
 });
 
+app.get('/db-test', async (req, res) => {
+  const [rows] = await pool.query('SELECT 1 AS result');
+  res.json(rows);
+});
+
 const PORT = process.env.PORT || 8000;
 
 app.listen(PORT, '0.0.0.0', () => {

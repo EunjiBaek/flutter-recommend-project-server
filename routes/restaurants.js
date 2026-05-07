@@ -8,6 +8,10 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
+console.log('OPENAI KEY exists:', !!process.env.OPENAI_API_KEY);
+console.log('OPENAI KEY length:', process.env.OPENAI_API_KEY?.length);
+console.log('OPENAI KEY prefix:', process.env.OPENAI_API_KEY?.slice(0, 7));
+
 async function searchNearbyRestaurants(keywords, lat, lng) {
   const allResults = [];
 
